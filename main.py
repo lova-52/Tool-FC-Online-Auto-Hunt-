@@ -172,6 +172,10 @@ tab_control.add(tab2, text="Bán cầu thủ")
 btn_sell = tk.Button(tab2, text="Start Selling", command=sell_players)
 btn_sell.pack(pady=20)
 
+# **Added Label for Image Display**
+lbl_image_text = tk.Label(root, text="Slot đặt cầu thủ sẽ được hiện ở đây: ", font=("Arial", 10, "bold"))
+lbl_image_text.pack(pady=5)
+
 # Display captured image in the main UI
 lbl_img = tk.Label(root)
 lbl_img.pack(pady=10)
