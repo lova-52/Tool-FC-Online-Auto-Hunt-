@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 import win32gui
@@ -9,9 +10,21 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 import pytesseract
 import re
+import sys
 
-# Set the Tesseract-OCR path (Modify this based on your installation)
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Get the correct path whether running from source or compiled EXE
+if getattr(sys, 'frozen', False):  # Running as EXE
+    base_path = sys._MEIPASS  # Temporary extraction path used by PyInstaller
+else:  # Running as a script
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+# Set the correct Tesseract-OCR path
+tesseract_path = os.path.join(base_path, "Tesseract-OCR", "tesseract.exe")
+pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+# Verify Tesseract path
+if not os.path.exists(tesseract_path):
+    raise FileNotFoundError(f"Tesseract not found at: {tesseract_path}")
 
 # Global flag to control automation
 running = False
@@ -72,10 +85,17 @@ def wait_for_real_text():
     show_img(img)
     return extracted_text
 
+def resize_and_reposition_window():
+    """ Resize and move the game window to the leftmost part of the screen """
+    if hWnd:
+        win32gui.MoveWindow(hWnd, 0, 0, 1280, 720, True)
+
+
 def hunt_players():
     """ Runs the hunting automation in a separate thread """
     global running
-    running = True  
+    running = True
+    resize_and_reposition_window()  
     thread = threading.Thread(target=hunt_players_loop, daemon=True)
     thread.start()
 
