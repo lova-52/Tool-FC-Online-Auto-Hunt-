@@ -82,7 +82,6 @@ def wait_for_real_text():
         if attempts >= 10:
             click(874, 630, num_clicks=1, interval=0)
     
-    show_img(img)
     return extracted_text
 
 def resize_and_reposition_window():
@@ -119,8 +118,13 @@ def hunt_players_loop():
         # Price changed
         if extracted_text != previous_price:
             print(extracted_text)
+            click(1004, 282, num_clicks=1, interval=0) #Click the max price
             print("Stop")
-            click(819, 553, num_clicks=1, interval=0)
+            time.sleep(0.1)
+            click(819, 553, num_clicks=1, interval=0)  #CLick Mua
+            time.sleep(3)
+            slot_img = capture_hidden_window(583, 310, 500, 380)
+            show_img(slot_img)
             break  # Stop if price changes
         
         # Price unchanged - Send Escape key
@@ -172,13 +176,14 @@ def stop_with_hotkey(event):
 root = tk.Tk()
 root.title("FC Online Automation")
 root.geometry("500x500")
+root.resizable(False, False)
 
 # Create tab control
 tab_control = ttk.Notebook(root)
 
 # Create first tab (Hunt Players)
 tab1 = ttk.Frame(tab_control)
-tab_control.add(tab1, text="Săn cầu thủ")
+tab_control.add(tab1, text="Săn từ Danh sách yêu thích  ")
 btn_hunt = tk.Button(tab1, text="Start Hunting", command=hunt_players)
 btn_hunt.pack(pady=10)
 
@@ -188,7 +193,7 @@ btn_stop.pack(pady=10)
 
 # Create second tab (Sell Players)
 tab2 = ttk.Frame(tab_control)
-tab_control.add(tab2, text="Bán cầu thủ")
+tab_control.add(tab2, text="Bán từ Danh sách yêu thích  ")
 btn_sell = tk.Button(tab2, text="Start Selling", command=sell_players)
 btn_sell.pack(pady=20)
 
