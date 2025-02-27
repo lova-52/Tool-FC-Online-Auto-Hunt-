@@ -1,27 +1,20 @@
-import os
-import time
-import threading
-import win32gui
-import win32api
-import win32con
-import win32ui
 import tkinter as tk
-from tkinter import ttk
-from PIL import Image, ImageTk
-import pytesseract
-import re
-import sys
-import requests
-import uuid
-import hashlib
 from ui import init_ui
+from license_check import check_license_ui, show_registration_window
 
+# Global Tkinter root
+root = tk.Tk()
+root.withdraw()  # Hide main window initially
 
-# Global Variables
-hWnd = win32gui.FindWindow(None, "FC ONLINE")
-if not hWnd:
-    print("Window not found!")
+def start_main_ui():
+    root.deiconify()  # Show main window only if the license is valid
+    init_ui(root)
+
+# Run License Check UI
+check = check_license_ui(root)
+if check == 1:
+    start_main_ui()
+elif check == 2:
+    root.mainloop() 
 else:
-    print("Window found!")
-
-init_ui()
+    show_registration_window(root)
