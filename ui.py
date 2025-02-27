@@ -14,7 +14,9 @@ import sys
 import requests
 import uuid
 import hashlib
+import winsound
 from license_check import check_license_ui
+
 
 hWnd = win32gui.FindWindow(None, "FC ONLINE")
 
@@ -24,6 +26,53 @@ base_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(o
 # Configure Tesseract Path
 tesseract_path = os.path.join(base_path, "Tesseract-OCR", "tesseract.exe")
 pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+
+# Firebase
+# Firebase Configuration
+FIREBASE_PROJECT_ID = "fconlinelicense"
+
+# Generate HWID
+def get_hwid():
+    hwid = uuid.getnode()
+    return hashlib.sha256(str(hwid).encode()).hexdigest()
+    
+# Fetch account details directly in ui.py
+def fetch_account_info():
+    try:
+        hwid = get_hwid()
+        firestore_url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/licenses/{hwid}"
+        response = requests.get(firestore_url, timeout=5).json()
+
+        if "fields" in response:
+            fields = response["fields"]
+            phone = fields.get("phone", {}).get("stringValue", "Unknown")
+            status = fields.get("status", {}).get("stringValue", "Unknown")
+            expiry_date = fields.get("expiry_date", {}).get("stringValue", "Unknown")  # If you store expiry date
+
+            return {
+                "phone": phone,
+                "hwid": hwid,
+                "status": status,
+                "expiry_date": expiry_date
+            }
+    
+    except requests.exceptions.RequestException:
+        messagebox.showerror("Lỗi", "Không thể kết nối đến server. Hãy kiểm tra mạng!")
+    
+    return None  # License not found or error occurred
+
+# Refresh account info
+def refresh_account_info(account_labels):
+    info = fetch_account_info()
+    if info:
+        account_labels["phone"].config(text=f"📞 SĐT: {info['phone']}")
+        account_labels["hwid"].config(text=f"💻 HWID: {info['hwid'][:10]}...")  # Partially hide HWID
+        account_labels["status"].config(text=f"✅ Trạng thái: {info['status'].upper()}", 
+                                        fg="green" if info["status"] == "active" else "red")
+        account_labels["expiry_date"].config(text=f"📅 Ngày hết hạn: {info['expiry_date']}")
+
+running = False
 
 if not os.path.exists(tesseract_path):
     raise FileNotFoundError(f"Tesseract not found at: {tesseract_path}")
@@ -54,13 +103,14 @@ def is_valid_price(text):
     text = text.strip()
     if " " in text:
         return False
+
     price_pattern = r"^\d{1,3}(,\d{3})*$|^\d+(\.\d+)?[MB]$"
     return re.match(price_pattern, text) is not None
 
 def wait_for_price_window_SanDSYT(x, y, width, length):
     extracted_text = ""
     attempts = 0
-    max_attempts = 50  
+    max_attempts = 100  
     while not is_valid_price(extracted_text) and attempts < max_attempts and running:
         img = capture_hidden_window(x, y, width, length)
         extracted_text = ocr_extraction(img).strip()
@@ -68,10 +118,11 @@ def wait_for_price_window_SanDSYT(x, y, width, length):
         if extracted_text != second_extracted_text:
             extracted_text = ocr_extraction(img).strip()
         print(f"Attempt {attempts}: Extracted Text = '{extracted_text}'")
-        time.sleep(0.01)
+        time.sleep(0.1)
         attempts += 1        
         if attempts % 5 == 0 and attempts >= 5 :
             send_escape_key()
+            time.sleep(0.1)
             click(874, 630, num_clicks=1, interval=0)
     return extracted_text
 
@@ -109,7 +160,6 @@ def ocr_extraction(img):
 def stop_with_hotkey(event):
     stop_automation()
 
-
 # Automation Functions
 def hunt_players():
     global running
@@ -133,17 +183,21 @@ def hunt_players_loop():
         if extracted_text != previous_price:
             time.sleep(0.1)
             confirmed_extracted_text = wait_for_price_window_SanDSYT(950, 305 ,100, 30)
-            if confirmed_extracted_text != extracted_text:
+            if confirmed_extracted_text != extracted_text and confirmed_extracted_text == previous_price:
                 continue
             print(extracted_text)
+            previous_price = extracted_text
             click(1004, 282, num_clicks=1, interval=0)
-            print("Stop")
+            print("Stop") 
             time.sleep(0.1)
             click(819, 553, num_clicks=1, interval=0)
             time.sleep(3)
-            slot_img = capture_hidden_window(583, 310, 500, 380)
+            slot_img = capture_hidden_window(583, 325, 500, 330)
             show_img(slot_img)
-            break  
+                                  
+            if hunt_sound_var.get():
+                winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+                
         print("The same price, skipping")
         send_escape_key()
 
@@ -165,56 +219,146 @@ def sell_players_loop():
         click(1000, 630, num_clicks=1, interval=0)
         extracted_text = wait_for_price_window_SanDSYT(941, 318 , 130, 30)
         if extracted_text != previous_price:
+            time.sleep(0.1)
+            confirmed_extracted_text = wait_for_price_window_SanDSYT(950, 305 ,100, 30)
+            if confirmed_extracted_text != extracted_text and confirmed_extracted_text == previous_price:
+               continue
             print(extracted_text)
+            previous_price = extracted_text
             click(1011, 299, num_clicks=1, interval=0)
             print("Stop")
             time.sleep(0.01)
             click(828, 587, num_clicks=1, interval=0)
-            time.sleep(2)
+            time.sleep(3)
             slot_img = capture_hidden_window(583, 310, 500, 380)
             show_img(slot_img)
-            break
+            
+            if sell_sound_var.get():
+                winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+
         print("The same price, skipping")
         send_escape_key()
 
+def toggle_automation_hunting():
+    global running
+    if running:
+        stop_automation()
+        btn_hunt_toggle.config(text="Bắt đầu", bg="blue", fg="white")  # Switch to start mode
+    else:
+        hunt_players()
+        btn_hunt_toggle.config(text="Dừng", bg="red", fg="white")  # Switch to stop mode
+        
+def toggle_automation_selling():
+    global running
+    if running:
+        stop_automation()
+        btn_sell_toggle.config(text="Bắt đầu", bg="blue", fg="white")  # Switch to start mode
+    else:
+        sell_players()
+        btn_sell_toggle.config(text="Dừng", bg="red", fg="white")  # Switch to stop mode
+        
 
+def init_ui(root):
+    global lbl_img_hunt, lbl_img_sell, btn_hunt_toggle, btn_sell_toggle  # Add btn_hunt_toggle & btn_sell_toggle
 
-def init_ui():
-    global root, lbl_img
-
-    root = tk.Tk()
-    root.title("FC Online Automation")
-    root.geometry("500x500")
+    root.iconbitmap("icon.ico")
+    root.title("FC Tool")
+    root.geometry("600x600")
     root.resizable(False, False)
+    
+    # Fetch account info
+    license_info = fetch_account_info()
+    phone = license_info["phone"] if license_info else "Unknown"
+    hwid = license_info["hwid"] if license_info else "Unknown"
+    status = license_info["status"] if license_info else "Unknown"
+    expiry_date = license_info["expiry_date"] if license_info else "Unknown"
+    
 
+    # Account Info Frame
+    account_frame = tk.Frame(root, relief="solid", borderwidth=1, padx=10, pady=5, bg="lightgray")
+    account_frame.pack(fill="x", pady=5)
+
+    tk.Label(account_frame, text="📌 Thông tin tài khoản", font=("Arial", 12, "bold"), bg="lightgray").pack()
+    
+    lbl_phone = tk.Label(account_frame, text=f"📞 SĐT: {phone}", font=("Arial", 10), bg="lightgray")
+    lbl_phone.pack()
+    
+    lbl_hwid = tk.Label(account_frame, text=f"💻 HWID: {hwid[:10]}...", font=("Arial", 10), bg="lightgray")  # Partially hidden HWID
+    lbl_hwid.pack()
+    
+    lbl_status = tk.Label(account_frame, text=f"✅ Trạng thái: {status.upper()}", font=("Arial", 10), 
+                          fg="green" if status == "active" else "red", bg="lightgray")
+    lbl_status.pack()
+    
+    lbl_expiry_date = tk.Label(account_frame, text=f"📅 Ngày hết hạn: {expiry_date}", font=("Arial", 10), bg="lightgray")
+    lbl_expiry_date.pack()
+
+    # Store labels for refreshing
+    account_labels = {
+        "phone": lbl_phone,
+        "hwid": lbl_hwid,
+        "status": lbl_status,
+        "expiry_date": lbl_expiry_date
+    }
+
+    # Refresh Button
+    btn_refresh = tk.Button(account_frame, text="🔄 Làm mới", font=("Arial", 10, "bold"),
+                            bg="blue", fg="white", command=lambda: refresh_account_info(account_labels))
+    btn_refresh.pack(pady=5)
 
     # Run License Check
-    if check_license_ui():
-        print("Valid")  # If license is valid, run main UI
+    if check_license_ui(root):
+        print("Valid")
     else:
-        root.mainloop()  # Keep Tkinter running while user registers
+        root.mainloop()
     
     tab_control = ttk.Notebook(root)
 
+    # Tab săn cầu thủ -----------------
     tab1 = ttk.Frame(tab_control)
     tab_control.add(tab1, text="Săn từ Danh sách yêu thích")
-    btn_hunt = tk.Button(tab1, text="Start Hunting", command=hunt_players)
-    btn_hunt.pack(pady=10)
-    btn_stop = tk.Button(tab1, text="Stop", command=stop_automation, bg="red", fg="white")
-    btn_stop.pack(pady=10)
 
+    btn_hunt_toggle = tk.Button(tab1, text="Bắt đầu", command=toggle_automation_hunting)  # Now defined globally
+    btn_hunt_toggle.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)  # Góc phải dưới cùng    
+    
+    lbl_image_text_hunt = tk.Label(tab1, text="Khi săn thành công, hình chụp màn hình lại slot đặt sẽ hiện ở đây:", font=("Arial", 10, "bold"))
+    lbl_image_text_hunt.pack(pady=5)
+    
+    # Hunting Image Frame
+    frame_hunt_img = tk.Frame(tab1, width=500, height=380, borderwidth=2, relief="groove", bg="white")
+    frame_hunt_img.pack(pady=10)
+    frame_hunt_img.pack_propagate(False) 
+      
+    lbl_img_hunt = tk.Label(frame_hunt_img, bg="white")
+    lbl_img_hunt.place(relx=0.5, rely=0.5, anchor="center")  
+    lbl_img_hunt.image = None  
+    
+    hunt_sound_var = tk.BooleanVar(value=True)
+    hunt_sound_checkbox = tk.Checkbutton(tab1, text="Phát âm thanh khi săn thành công", variable=hunt_sound_var)
+    hunt_sound_checkbox.pack() 
+    
+    # Tab bán cầu thủ -----------------
     tab2 = ttk.Frame(tab_control)
     tab_control.add(tab2, text="Bán từ Danh sách yêu thích")
-    btn_sell = tk.Button(tab2, text="Start Selling", command=sell_players)
-    btn_sell.pack(pady=20)
 
-    lbl_image_text = tk.Label(root, text="Slot đặt cầu thủ sẽ được hiện ở đây: ", font=("Arial", 10, "bold"))
-    lbl_image_text.pack(pady=5)
-    lbl_img = tk.Label(root)
-    lbl_img.pack(pady=10)
+    btn_sell_toggle = tk.Button(tab2, text="Bắt đầu", command=toggle_automation_selling)  # Also declare btn_sell_toggle globally
+    btn_sell_toggle.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)  
 
-    lbl_text = tk.Label(root, text="", wraplength=400, justify="left", font=("Arial", 10))
-    lbl_text.pack(pady=10)
+    lbl_image_text_sell = tk.Label(tab2, text="Khi bán thành công, hình ảnh sẽ hiện ở đây:", font=("Arial", 10, "bold"))
+    lbl_image_text_sell.pack()
+
+    # Selling Image Frame
+    frame_sell_img = tk.Frame(tab2, width=500, height=380, borderwidth=2, relief="groove", bg="white")
+    frame_sell_img.pack(pady=10)
+    frame_sell_img.pack_propagate(False)
+
+    lbl_img_sell = tk.Label(frame_sell_img, bg="white")
+    lbl_img_sell.place(relx=0.5, rely=0.5, anchor="center")  
+    lbl_img_sell.image = None  
+    
+    sell_sound_var = tk.BooleanVar(value=True)
+    sell_sound_checkbox = tk.Checkbutton(tab2, text="Phát âm thanh khi bán thành công", variable=sell_sound_var)
+    sell_sound_checkbox.pack(pady=5)
 
     tab_control.pack(expand=1, fill="both")
     root.bind("<F3>", stop_with_hotkey)
@@ -222,3 +366,12 @@ def init_ui():
     root.mainloop()
 
 
+def show_img(img, mode="hunt"):
+    img = img.resize((480, 290))
+    img_tk = ImageTk.PhotoImage(img)
+    if mode == "hunt":
+        lbl_img_hunt.config(image=img_tk)
+        lbl_img_hunt.image = img_tk
+    else:
+        lbl_img_sell.config(image=img_tk)
+        lbl_img_sell.image = img_tk
