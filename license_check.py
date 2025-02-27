@@ -1,24 +1,27 @@
 import os
-import sys
 import requests
 import uuid
 import hashlib
-import threading
-import time
 import tkinter as tk
 from tkinter import ttk, messagebox
+import sys 
 
 # Firebase API Configuration
 FIREBASE_API_KEY = "AIzaSyCelw2i7_0_bmgwTWVl47zBmCStc-guZDE"
 FIREBASE_PROJECT_ID = "fconlinelicense"
 
+# Restart the program
+def restart_program():
+    python = sys.executable
+    os.execv(python, [python] + sys.argv)  # Restart the entire program
+    
 # Generate HWID
 def get_hwid():
     hwid = uuid.getnode()
     return hashlib.sha256(str(hwid).encode()).hexdigest()
     
 # Check if HWID is registered
-def check_license_ui():
+def check_license_ui(root):
     hwid = get_hwid()
     firestore_url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/licenses"
     response = requests.get(firestore_url).json()
@@ -32,42 +35,53 @@ def check_license_ui():
 
             if stored_hwid == hwid:
                 if status == "active":
-                    return True  # License is valid, continue program
-                else:
-                    messagebox.showerror("License Error", "❌ License inactive! Contact admin.")
-                    return False
-
-    # HWID is not found → Show registration UI
-    show_registration_window()
-    return False
-    
+                    return 1  # License is valid, continue program
+                if status == "inactive":
+                    messagebox.showerror("Lỗi", "Tài khoàn đã hết thời gian sử dụng! Hãy liên hệ admin để đăng ký tiếp!")
+                    return 2
+                    
+    return 3
+                    
     
 # Show UI for License Key Entry
-def show_registration_window():
-    reg_window = tk.Tk()
-    reg_window.title("License Registration")
-    reg_window.geometry("400x200")
+def show_registration_window(root):
+    reg_window = tk.Toplevel()
+    reg_window.iconbitmap("icon.ico")
+    reg_window.title("FC Tool")
+    reg_window.resizable(False, False)
+    reg_window.geometry("400x250")
     reg_window.grab_set()  # Make this window modal
 
-
-    tk.Label(reg_window, text="HWID not registered!", font=("Arial", 12, "bold"), fg="red").pack(pady=10)
-    tk.Label(reg_window, text="Enter your license key:").pack()
+    tk.Label(reg_window, text="Máy chưa được đăng ký!", font=("Arial", 12, "bold"), fg="red").pack(pady=10)
+    tk.Label(reg_window, text="Nhập key vào ô này:").pack()
 
     license_entry = tk.Entry(reg_window, width=30)
     license_entry.pack(pady=5)
 
+    tk.Label(reg_window, text="Nhập số điện thoại của bạn:").pack()
+    phone_entry = tk.Entry(reg_window, width=30)
+    phone_entry.pack(pady=5)
+
     def submit_license():
         license_key = license_entry.get().strip().upper()
-        if register_license(license_key):
-            messagebox.showinfo("Success", "✅ Registration successful! You can now use the program.")
-            reg_window.destroy()
-        else:
-            messagebox.showerror("Error", "❌ Invalid or already used license key.")
+        phone_number = phone_entry.get().strip()
+        if not phone_number.isdigit() or len(phone_number) < 7:
+            messagebox.showerror("Lỗi", "Số điện thoại không hợp lệ!")
+            return
 
-    tk.Button(reg_window, text="Register", command=submit_license, bg="green", fg="white").pack(pady=10)
+        if register_license(license_key, phone_number):
+            messagebox.showinfo("Thành công", "Đăng ký thành công. Bạn có thể dùng chương trình được rồi!")
+            reg_window.destroy()
+            restart_program()
+        else:
+            messagebox.showerror("Lỗi", "Key không hợp lệ. Hãy liên hệ admin để được hỗ trợ.")
+
+    tk.Button(reg_window, text="Đăng ký", command=submit_license, bg="green", fg="white").pack(pady=10)
+    reg_window.mainloop()
+    return False  # Only return True if registered successfully
 
 # Verify and Register License Key
-def register_license(license_key):
+def register_license(license_key, phone_number):
     hwid = get_hwid()
 
     # Verify license key
@@ -80,6 +94,7 @@ def register_license(license_key):
         data = {
             "fields": {
                 "hwid": {"stringValue": hwid},
+                "phone": {"stringValue": phone_number},
                 "status": {"stringValue": "active"}
             }
         }
