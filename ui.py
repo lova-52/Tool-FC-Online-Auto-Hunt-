@@ -6,7 +6,6 @@ import win32api
 import win32con
 import win32ui
 import tkinter as tk
-from tkinter import ttk
 from PIL import Image, ImageTk
 import pytesseract
 import re
@@ -15,7 +14,14 @@ import requests
 import uuid
 import hashlib
 import winsound
+import datetime
+import pytz  # Import pytz for timezone handling
 from license_check import check_license_ui
+from tkinter import ttk, messagebox
+
+
+# Define your timezone (Vietnam = UTC+7)
+LOCAL_TIMEZONE = pytz.timezone("Asia/Ho_Chi_Minh")
 
 
 hWnd = win32gui.FindWindow(None, "FC ONLINE")
@@ -38,6 +44,7 @@ def get_hwid():
     return hashlib.sha256(str(hwid).encode()).hexdigest()
     
 # Fetch account details directly in ui.py
+
 def fetch_account_info():
     try:
         hwid = get_hwid()
@@ -48,7 +55,21 @@ def fetch_account_info():
             fields = response["fields"]
             phone = fields.get("phone", {}).get("stringValue", "Unknown")
             status = fields.get("status", {}).get("stringValue", "Unknown")
-            expiry_date = fields.get("expiry_date", {}).get("stringValue", "Unknown")  # If you store expiry date
+            
+            # Extract expiry_date from Firebase timestamp
+            expiry_timestamp = fields.get("expiry_date", {}).get("timestampValue", "Unknown")
+
+            if expiry_timestamp != "Unknown":
+                # Convert ISO timestamp to datetime object in UTC
+                expiry_date_utc = datetime.datetime.fromisoformat(expiry_timestamp.replace("Z", "+00:00"))
+                
+                # Convert from UTC to local time (UTC+7)
+                expiry_date_local = expiry_date_utc.astimezone(LOCAL_TIMEZONE)
+                
+                # Format to readable date
+                expiry_date = expiry_date_local.strftime("%d-%m-%Y %H:%M:%S")
+            else:
+                expiry_date = "Unknown"
 
             return {
                 "phone": phone,
@@ -59,7 +80,7 @@ def fetch_account_info():
     
     except requests.exceptions.RequestException:
         messagebox.showerror("Lỗi", "Không thể kết nối đến server. Hãy kiểm tra mạng!")
-    
+
     return None  # License not found or error occurred
 
 # Refresh account info
@@ -257,13 +278,49 @@ def toggle_automation_selling():
         sell_players()
         btn_sell_toggle.config(text="Dừng", bg="red", fg="white")  # Switch to stop mode
         
+#  **Disable the Entire UI When Expired**
+def disable_ui(root):
+    for widget in root.winfo_children():
+        try:
+            widget.config(state="disabled")  # Disable only if the widget supports "state"
+        except tk.TclError:
+            pass  # Ignore widgets that don't support "state"
+    
+    messagebox.showwarning("Hết thời gian sử dụng", "Hết thời gian sử dụng, hãy nạp thêm!")
 
+
+# 🔄 **Function to Constantly Check Expiry**
+def check_expiry_status(root):
+    while True:
+        account_info = fetch_account_info()
+        if account_info:
+            expiry_date_str = account_info["expiry_date"]
+            now = datetime.datetime.now(LOCAL_TIMEZONE)
+
+            try:
+                expiry_date = datetime.datetime.strptime(expiry_date_str, "%d-%m-%Y %H:%M:%S")  # Convert string to datetime
+                expiry_date = LOCAL_TIMEZONE.localize(expiry_date)  # Ensure it's timezone-aware
+
+                print(now, "compare with", expiry_date)
+                if now >= expiry_date:
+                    root.after(0, disable_ui, root)  # Disable UI from the main thread
+                    break  # Stop checking
+            except ValueError as e:
+                print("Error parsing expiry_date:", e)
+
+        time.sleep(60)  # Check every 60 seconds
+        
+# 🔥 **Start Expiry Checking Thread**
+def start_expiry_checker(root):
+    expiry_thread = threading.Thread(target=check_expiry_status, args=(root,), daemon=True)
+    expiry_thread.start()
+              
 def init_ui(root):
-    global lbl_img_hunt, lbl_img_sell, btn_hunt_toggle, btn_sell_toggle  # Add btn_hunt_toggle & btn_sell_toggle
+    global lbl_img_hunt, lbl_img_sell, btn_hunt_toggle, btn_sell_toggle, hunt_sound_var, sell_sound_var  
 
     root.iconbitmap("icon.ico")
     root.title("FC Tool")
-    root.geometry("600x600")
+    root.geometry("600x700")
     root.resizable(False, False)
     
     # Fetch account info
@@ -272,7 +329,9 @@ def init_ui(root):
     hwid = license_info["hwid"] if license_info else "Unknown"
     status = license_info["status"] if license_info else "Unknown"
     expiry_date = license_info["expiry_date"] if license_info else "Unknown"
-    
+  
+   # Start expiry checking thread
+    start_expiry_checker(root)  
 
     # Account Info Frame
     account_frame = tk.Frame(root, relief="solid", borderwidth=1, padx=10, pady=5, bg="lightgray")
@@ -300,9 +359,14 @@ def init_ui(root):
         "status": lbl_status,
         "expiry_date": lbl_expiry_date
     }
+    
+    # Sound Variables (MAKE THEM GLOBAL)
+    hunt_sound_var = tk.BooleanVar(value=True)
+    sell_sound_var = tk.BooleanVar(value=True)
+
 
     # Refresh Button
-    btn_refresh = tk.Button(account_frame, text="🔄 Làm mới", font=("Arial", 10, "bold"),
+    btn_refresh = tk.Button(account_frame, text="🔄 Làm mới", font=("Arial", 8, "bold"),
                             bg="blue", fg="white", command=lambda: refresh_account_info(account_labels))
     btn_refresh.pack(pady=5)
 
